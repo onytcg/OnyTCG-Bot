@@ -62,10 +62,7 @@ def generate_voice_sync(text: str) -> str:
     asyncio.run(_generate())
     return filename
 
-def respond(message, history):
-    if history is None:
-        history = []
-    
+def chat(message, history):
     search_results = search_web(message)
     
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -92,24 +89,13 @@ Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
     )
     
     reply = response.choices[0].message.content
-    voice_file = generate_voice_sync(reply)
-    
-    history = history + [(message, reply)]
-    return history, voice_file
+    return reply
 
-with gr.Blocks(title="OnyTCG") as demo:
-    gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
-    
-    chatbot = gr.Chatbot(height=400)
-    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
-    audio_out = gr.Audio(label="Risposta vocale", autoplay=True)
-    
-    def submit(message, history):
-        if not message.strip():
-            return history, None, ""
-        new_history, voice = respond(message, history)
-        return new_history, voice, ""
-    
-    msg.submit(submit, [msg, chatbot], [chatbot, audio_out, msg])
+demo = gr.ChatInterface(
+    fn=chat,
+    title="OnyTCG 🤖",
+    description="Il tuo assistente personale",
+    examples=["Ciao!", "Che tempo fa a La Spezia?", "Dimmi qualcosa sulle carte Pokémon"]
+)
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
