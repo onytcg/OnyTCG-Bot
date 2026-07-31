@@ -45,7 +45,7 @@ def search_web(query: str) -> str:
         return f"Errore nella ricerca: {e}"
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
-    # Pulisce il testo per una pronuncia migliore
+    # Pulisce e corregge la pronuncia
     clean_text = text
     clean_text = clean_text.replace("*", "")
     clean_text = clean_text.replace("_", "")
@@ -53,12 +53,19 @@ async def generate_voice(text: str, filename: str = "voice.mp3"):
     clean_text = clean_text.replace("`", "")
     clean_text = clean_text.replace("\n", ". ")
     
-    # Voce un po’ più energica
+    # Correzione pronuncia OnyTCG
+    clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi")
+    clean_text = clean_text.replace("Onytcg", "Oni Ti Ci Gi")
+    clean_text = clean_text.replace("onytcg.it", "oni ti ci gi punto it")
+    clean_text = clean_text.replace("Onytcg.it", "oni ti ci gi punto it")
+    clean_text = clean_text.replace("ON Y TCG", "Oni Ti Ci Gi")
+    
+    # Voce più naturale
     communicate = edge_tts.Communicate(
         clean_text, 
-        "it-IT-DiegoNeural",
+        "it-IT-GiuseppeMultilingualNeural",
         rate="-5%",
-        pitch="+5Hz"
+        pitch="+3Hz"
     )
     await communicate.save(filename)
     return filename
