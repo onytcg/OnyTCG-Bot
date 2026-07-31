@@ -13,12 +13,15 @@ client = OpenAI(
 )
 
 SYSTEM_PROMPT = """
-Sei OnyTCG, un assistente preciso e chiaro.
-Rispondi SEMPRE in italiano.
-Rispondi SOLO alla domanda fatta, in modo breve e preciso.
-Quando ti vengono date informazioni da internet o dal contenuto di pagine web, usale.
-Non inventare informazioni.
-Non dire che non puoi cercare online.
+Sei OnyTCG.
+Rispondi SEMPRE in italiano, in modo breve e preciso.
+
+REGOLE OBBLIGATORIE:
+1. Ti vengono forniti i contenuti delle pagine web. Usali.
+2. NON dire MAI che non puoi aprire i link.
+3. NON dire MAI che puoi solo fornire informazioni sui contenuti trovati online.
+4. Se ti viene dato il contenuto di una pagina, usalo come se l'avessi letto tu.
+5. Rispondi solo alla domanda fatta.
 """
 
 def get_page_content(url: str) -> str:
@@ -36,7 +39,6 @@ def get_page_content(url: str) -> str:
             tag.decompose()
         
         text = soup.get_text(separator=" ", strip=True)
-        # Pulisce spazi multipli
         text = " ".join(text.split())
         return text[:3000]
     except Exception as e:
@@ -51,19 +53,22 @@ def search_web(query: str) -> str:
             return ""
 
         text = ""
-        for r in results:
+        for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
             
-            text += f"### {title}\n"
+            text += f"=== RISULTATO {i} ===\n"
+            text += f"Titolo: {title}\n"
             text += f"Riassunto: {body}\n"
-            text += f"Link: {href}\n"
+            text += f"URL: {href}\n"
             
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
-                    text += f"Contenuto della pagina:\n{content}\n"
+                    text += f"CONTENUTO LETTO DALLA PAGINA:\n{content}\n"
+                else:
+                    text += "Contenuto pagina non disponibile.\n"
             
             text += "\n"
         
@@ -94,12 +99,13 @@ def chat(message, history):
 
         if search_results:
             user_content = f"""
-Domanda: {message}
+Domanda dell'utente: {message}
 
-Informazioni trovate su internet (inclusi i contenuti delle pagine aperte):
+Ecco i risultati della ricerca e i contenuti delle pagine che ho letto per te:
+
 {search_results}
 
-Rispondi alla domanda in modo preciso usando solo queste informazioni.
+Rispondi alla domanda usando queste informazioni. Hai già letto i contenuti delle pagine.
 """
         else:
             user_content = message
@@ -109,7 +115,7 @@ Rispondi alla domanda in modo preciso usando solo queste informazioni.
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.5,
+            temperature=0.4,
             max_tokens=500
         )
 
