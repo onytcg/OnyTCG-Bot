@@ -2,7 +2,7 @@ python-telegram-bot==21.6
 openai
 edge-tts
 ddgs
-gradio
+streamlit
 audioop-lts
 requests
 beautifulsoup4
