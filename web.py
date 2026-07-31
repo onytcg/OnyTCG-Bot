@@ -1,6 +1,6 @@
 import os
 import tempfile
-import gradio as gr
+import streamlit as st
 from openai import OpenAI
 from ddgs import DDGS
 import requests
@@ -27,23 +27,6 @@ REGOLE DI PRECISIONE (obbligatorie):
 5. Quando trovi link, mettili nella risposta.
 6. Il sito ufficiale è https://onytcg.it
 """
-
-def clean_content(content):
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts = []
-        for item in content:
-            if isinstance(item, dict) and "text" in item:
-                texts.append(str(item["text"]))
-            else:
-                texts.append(str(item))
-        return " ".join(texts)
-    if isinstance(content, dict):
-        return str(content.get("text", content))
-    return str(content)
 
 def get_page_content(url: str) -> str:
     try:
@@ -119,31 +102,17 @@ def generate_voice(text: str):
         print("Errore voce:", e)
         return None
 
-def chat(message, history):
-    try:
-        if not message or not str(message).strip():
-            return history or [], None
-
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        
-        if history:
-            for item in history:
-                try:
-                    if isinstance(item, dict):
-                        role = item.get("role", "user")
-                        content = clean_content(item.get("content", ""))
-                        if role and content:
-                            messages.append({"role": role, "content": content})
-                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                        messages.append({"role": "user", "content": clean_content(item[0])})
-                        messages.append({"role": "assistant", "content": clean_content(item[1])})
-                except:
-                    continue
-
-        search_results = search_web(str(message))
-
-        if search_results:
-            user_content = f"""
+def get_ai_response(message, history):
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    for human, assistant in history:
+        messages.append({"role": "user", "content": human})
+        messages.append({"role": "assistant", "content": assistant})
+    
+    search_results = search_web(message)
+    
+    if search_results:
+        user_content = f"""
 Domanda: {message}
 
 Risultati della ricerca (web + social):
@@ -153,48 +122,48 @@ Rispondi in modo breve e preciso usando SOLO queste informazioni.
 Se non trovi niente di concreto, dillo chiaramente.
 Se trovi link utili, mettili nella risposta.
 """
-        else:
-            user_content = str(message)
-
-        messages.append({"role": "user", "content": user_content})
-
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=messages,
-            temperature=0.2,
-            max_tokens=300
-        )
-
-        reply = response.choices[0].message.content
-        voice_file = generate_voice(reply)
-        
-        # Formato moderno per Gradio
-        new_history = (history or []) + [
-            {"role": "user", "content": message},
-            {"role": "assistant", "content": reply}
-        ]
-        
-        return new_history, voice_file
-
-    except Exception as e:
-        print("Errore:", e)
-        new_history = (history or []) + [
-            {"role": "user", "content": message},
-            {"role": "assistant", "content": "Scusa, riprova pure."}
-        ]
-        return new_history, None
-
-with gr.Blocks(title="OnyTCG") as demo:
-    gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
+    else:
+        user_content = message
     
-    chatbot = gr.Chatbot(height=400, type="messages")
-    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio", show_label=False)
-    audio_out = gr.Audio(label="Voce", autoplay=True)
+    messages.append({"role": "user", "content": user_content})
     
-    def respond(message, history):
-        new_history, voice = chat(message, history)
-        return new_history, voice, ""
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=messages,
+        temperature=0.2,
+        max_tokens=300
+    )
     
-    msg.submit(respond, [msg, chatbot], [chatbot, audio_out, msg])
+    return response.choices[0].message.content
 
-demo.launch(server_name="0.0.0.0", server_port=7860)
+# --- STREAMLIT UI ---
+st.set_page_config(page_title="OnyTCG", page_icon="🤖")
+st.title("OnyTCG 🤖")
+st.caption("Il tuo assistente personale")
+
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# Mostra la cronologia
+for human, assistant in st.session_state.history:
+    with st.chat_message("user"):
+        st.write(human)
+    with st.chat_message("assistant"):
+        st.write(assistant)
+
+# Input
+if prompt := st.chat_input("Scrivi qui..."):
+    with st.chat_message("user"):
+        st.write(prompt)
+    
+    with st.chat_message("assistant"):
+        with st.spinner("Sto pensando..."):
+            reply = get_ai_response(prompt, st.session_state.history)
+            st.write(reply)
+            
+            # Genera e riproduce la voce in automatico
+            voice_file = generate_voice(reply)
+            if voice_file:
+                st.audio(voice_file, autoplay=True)
+    
+    st.session_state.history.append((prompt, reply))
