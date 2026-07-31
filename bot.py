@@ -23,9 +23,10 @@ SYSTEM_PROMPT = """
 Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
 Rispondi SOLO alla domanda fatta.
-Non inventare storie, film, libri o collegamenti inutili.
-Se la domanda è semplice (tipo "ci sei?", "ciao", "come stai"), rispondi in modo semplice.
-Non allungare inutilmente le risposte.
+Non inventare informazioni.
+Se non trovi niente di concreto, dillo chiaramente.
+Quando trovi link, mettili nella risposta.
+Il sito ufficiale è https://onytcg.it
 """
 
 def get_page_content(url: str) -> str:
@@ -44,22 +45,45 @@ def get_page_content(url: str) -> str:
 
 def search_web(query: str) -> str:
     try:
-        results = list(DDGS().text(query, region="it-it", max_results=3))
+        results = []
+        
+        # Ricerca web normale
+        results += list(DDGS().text(query, region="it-it", max_results=4))
+        
+        # Ricerca social
+        words = query.lower().split()
+        if len(words) >= 2:
+            results += list(DDGS().text(f"{query} facebook", region="it-it", max_results=2))
+            results += list(DDGS().text(f"{query} instagram", region="it-it", max_results=2))
+            results += list(DDGS().text(f"{query} linkedin", region="it-it", max_results=2))
+            results += list(DDGS().text(f'"{query}"', region="it-it", max_results=2))
+
         if not results:
             return ""
+
         text = ""
+        seen = set()
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
-            text += f"{i}. {title}\n{body}\n"
+            
+            key = title + href
+            if key in seen:
+                continue
+            seen.add(key)
+            
+            text += f"{i}. {title}\n{body}\nLink: {href}\n"
+            
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
                     text += f"Contenuto: {content}\n"
             text += "\n"
+        
         return text
-    except:
+    except Exception as e:
+        print("Errore ricerca:", e)
         return ""
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
@@ -79,13 +103,19 @@ async def get_ai_response(user_id: int, message: str) -> str:
     if user_id not in conversation_memory:
         conversation_memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    search_results = ""
-    keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove"]
-    if any(k in message.lower() for k in keywords):
-        search_results = search_web(message)
+    search_results = search_web(message)
     
     if search_results:
-        enhanced_message = f"Domanda: {message}\n\nInfo trovate:\n{search_results}\n\nRispondi in modo breve e preciso."
+        enhanced_message = f"""
+Domanda: {message}
+
+Risultati della ricerca (web + social):
+{search_results}
+
+Rispondi in modo breve e preciso usando solo queste informazioni.
+Se non trovi niente di concreto, dillo chiaramente.
+Se trovi link utili, mettili nella risposta.
+"""
     else:
         enhanced_message = message
     
@@ -98,7 +128,7 @@ async def get_ai_response(user_id: int, message: str) -> str:
         model="llama-3.1-8b-instant",
         messages=conversation_memory[user_id],
         temperature=0.3,
-        max_tokens=300
+        max_tokens=350
     )
     
     ai_reply = response.choices[0].message.content
