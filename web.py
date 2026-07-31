@@ -62,7 +62,6 @@ def get_page_content(url: str) -> str:
 def search_web(query: str) -> str:
     try:
         results = []
-        
         results += list(DDGS().text(query, region="it-it", max_results=2))
         
         words = query.lower().split()
@@ -123,14 +122,19 @@ def generate_voice(text: str):
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return history or [], None, ""
+            return "Scrivi pure!"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
         if history:
             for item in history:
                 try:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    if isinstance(item, dict):
+                        role = item.get("role", "user")
+                        content = clean_content(item.get("content", ""))
+                        if role and content:
+                            messages.append({"role": role, "content": content})
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
                         messages.append({"role": "user", "content": clean_content(item[0])})
                         messages.append({"role": "assistant", "content": clean_content(item[1])})
                 except:
@@ -162,23 +166,36 @@ Se trovi link utili, mettili nella risposta.
         )
 
         reply = response.choices[0].message.content
-        voice_file = generate_voice(reply)
         
-        new_history = (history or []) + [(message, reply)]
-        return new_history, voice_file, ""
+        # Genera la voce e la salva in una variabile globale per il pulsante
+        global last_voice
+        last_voice = generate_voice(reply)
+        
+        return reply
 
     except Exception as e:
         print("Errore:", e)
-        new_history = (history or []) + [(message, "Scusa, riprova pure.")]
-        return new_history, None, ""
+        return "Scusa, riprova pure."
+
+last_voice = None
+
+def get_voice():
+    global last_voice
+    return last_voice
 
 with gr.Blocks(title="OnyTCG") as demo:
     gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
     
-    chatbot = gr.Chatbot(height=400)
-    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
-    audio_out = gr.Audio(label="Voce", autoplay=True)
+    chatbot = gr.ChatInterface(
+        fn=chat,
+        title="",
+        description=""
+    )
     
-    msg.submit(chat, [msg, chatbot], [chatbot, audio_out, msg])
+    with gr.Row():
+        voice_btn = gr.Button("🔊 Ascolta l'ultima risposta")
+        audio_out = gr.Audio(label="Voce", autoplay=True)
+    
+    voice_btn.click(get_voice, outputs=audio_out)
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
