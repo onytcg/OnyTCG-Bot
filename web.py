@@ -102,6 +102,19 @@ def generate_voice(text: str):
         print("Errore voce:", e)
         return None
 
+def transcribe_audio(audio_file):
+    try:
+        with open(audio_file, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=f,
+                language="it"
+            )
+        return transcription.text
+    except Exception as e:
+        print("Errore trascrizione:", e)
+        return None
+
 def get_ai_response(message, history):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     
@@ -139,7 +152,7 @@ Se trovi link utili, mettili nella risposta.
 # --- STREAMLIT UI ---
 st.set_page_config(page_title="OnyTCG", page_icon="🤖")
 st.title("OnyTCG 🤖")
-st.caption("Il tuo assistente personale")
+st.caption("Il tuo assistente personale — parla o scrivi")
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -151,8 +164,36 @@ for human, assistant in st.session_state.history:
     with st.chat_message("assistant"):
         st.write(assistant)
 
-# Input
-if prompt := st.chat_input("Scrivi qui..."):
+# Input microfono
+st.write("### 🎤 Parla con me")
+audio_input = st.audio_input("Registra il tuo messaggio")
+
+if audio_input is not None:
+    # Salva l'audio
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_input.read())
+        audio_path = tmp.name
+    
+    with st.spinner("Sto ascoltando..."):
+        user_text = transcribe_audio(audio_path)
+    
+    if user_text:
+        with st.chat_message("user"):
+            st.write(user_text)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Sto pensando..."):
+                reply = get_ai_response(user_text, st.session_state.history)
+                st.write(reply)
+                
+                voice_file = generate_voice(reply)
+                if voice_file:
+                    st.audio(voice_file, autoplay=True)
+        
+        st.session_state.history.append((user_text, reply))
+
+# Input testo (opzionale)
+if prompt := st.chat_input("Oppure scrivi qui..."):
     with st.chat_message("user"):
         st.write(prompt)
     
@@ -161,7 +202,6 @@ if prompt := st.chat_input("Scrivi qui..."):
             reply = get_ai_response(prompt, st.session_state.history)
             st.write(reply)
             
-            # Genera e riproduce la voce in automatico
             voice_file = generate_voice(reply)
             if voice_file:
                 st.audio(voice_file, autoplay=True)
