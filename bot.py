@@ -21,68 +21,50 @@ conversation_memory = {}
 
 SYSTEM_PROMPT = """
 Sei OnyTCG, un ragazzo giovane e simpatico.
-Rispondi SEMPRE in italiano, in modo naturale e chiaro.
-Hai la capacità di cercare su internet e di leggere il contenuto delle pagine web.
-Quando ti vengono forniti i contenuti delle pagine, significa che le hai già aperte e lette.
-Non dire mai che non puoi aprire i link.
-Usa le informazioni fornite per rispondere.
-Rispondi in modo breve e diretto.
+Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
+Rispondi SOLO alla domanda fatta.
+Non inventare storie, film, libri o collegamenti inutili.
+Se la domanda è semplice (tipo "ci sei?", "ciao", "come stai"), rispondi in modo semplice.
+Non allungare inutilmente le risposte.
 """
 
 def get_page_content(url: str) -> str:
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         r = requests.get(url, headers=headers, timeout=6)
         if r.status_code != 200:
             return ""
-        
         soup = BeautifulSoup(r.text, "html.parser")
-        
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
-        
         text = soup.get_text(separator=" ", strip=True)
-        text = " ".join(text.split())
-        return text[:2000]
+        return " ".join(text.split())[:2000]
     except:
         return ""
 
 def search_web(query: str) -> str:
     try:
         results = list(DDGS().text(query, region="it-it", max_results=3))
-        
         if not results:
             return ""
-
         text = ""
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
-            
-            text += f"=== {i}. {title} ===\n"
-            text += f"{body}\n"
-            
+            text += f"{i}. {title}\n{body}\n"
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
                     text += f"Contenuto: {content}\n"
-            
             text += "\n"
-        
         return text
-    except Exception as e:
-        print("Errore ricerca:", e)
+    except:
         return ""
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
-    clean_text = text
-    clean_text = clean_text.replace("*", "").replace("_", "").replace("#", "").replace("`", "")
-    clean_text = clean_text.replace("\n", ". ")
-    clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi")
-    clean_text = clean_text.replace("onytcg.it", "oni ti ci gi punto it")
+    clean_text = text.replace("*", "").replace("_", "").replace("#", "").replace("`", "").replace("\n", ". ")
+    clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi").replace("onytcg.it", "oni ti ci gi punto it")
     
     communicate = edge_tts.Communicate(
         clean_text,
@@ -97,21 +79,13 @@ async def get_ai_response(user_id: int, message: str) -> str:
     if user_id not in conversation_memory:
         conversation_memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    # Ricerca solo se sembra necessaria
     search_results = ""
-    keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove", "chi", "cosa"]
-    if any(k in message.lower() for k in keywords) or len(message.split()) > 3:
+    keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove"]
+    if any(k in message.lower() for k in keywords):
         search_results = search_web(message)
     
     if search_results:
-        enhanced_message = f"""
-Domanda: {message}
-
-Informazioni trovate:
-{search_results}
-
-Rispondi usando queste informazioni se utili.
-"""
+        enhanced_message = f"Domanda: {message}\n\nInfo trovate:\n{search_results}\n\nRispondi in modo breve e preciso."
     else:
         enhanced_message = message
     
@@ -121,10 +95,10 @@ Rispondi usando queste informazioni se utili.
         conversation_memory[user_id] = [conversation_memory[user_id][0]] + conversation_memory[user_id][-18:]
     
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=conversation_memory[user_id],
-        temperature=0.4,
-        max_tokens=400
+        temperature=0.3,
+        max_tokens=300
     )
     
     ai_reply = response.choices[0].message.content
