@@ -39,19 +39,14 @@ def generate_voice(text: str):
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return history or [], None, ""
+            return "Scrivi pure!"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
-        # Gestione sicura della history
         if history:
-            for item in history:
-                try:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2:
-                        messages.append({"role": "user", "content": str(item[0])})
-                        messages.append({"role": "assistant", "content": str(item[1])})
-                except:
-                    pass
+            for human, assistant in history:
+                messages.append({"role": "user", "content": str(human)})
+                messages.append({"role": "assistant", "content": str(assistant)})
 
         messages.append({"role": "user", "content": str(message)})
 
@@ -62,24 +57,16 @@ def chat(message, history):
             max_tokens=300
         )
 
-        reply = response.choices[0].message.content
-        voice_file = generate_voice(reply)
-        
-        new_history = (history or []) + [(message, reply)]
-        return new_history, voice_file, ""
+        return response.choices[0].message.content
 
     except Exception as e:
-        print("Errore chat:", e)
-        new_history = (history or []) + [(message, "Scusa, riprova pure.")]
-        return new_history, None, ""
+        print("Errore:", e)
+        return "Scusa, riprova pure."
 
-with gr.Blocks(title="OnyTCG") as demo:
-    gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
-    
-    chatbot = gr.Chatbot(height=400)
-    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
-    audio_out = gr.Audio(label="Voce", autoplay=True)
-    
-    msg.submit(chat, [msg, chatbot], [chatbot, audio_out, msg])
+demo = gr.ChatInterface(
+    fn=chat,
+    title="OnyTCG 🤖",
+    description="Il tuo assistente personale"
+)
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
