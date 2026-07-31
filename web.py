@@ -1,9 +1,6 @@
 import os
-import tempfile
 import gradio as gr
 from openai import OpenAI
-import edge_tts
-import asyncio
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -20,22 +17,6 @@ Non inventare storie o collegamenti inutili.
 Se la domanda è semplice, rispondi in modo semplice.
 """
 
-def generate_voice(text: str):
-    try:
-        clean_text = text.replace("*", "").replace("_", "").replace("#", "").replace("`", "").replace("\n", ". ")
-        clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi").replace("onytcg.it", "oni ti ci gi punto it")
-        filename = tempfile.mktemp(suffix=".mp3")
-        
-        async def _gen():
-            communicate = edge_tts.Communicate(clean_text, "it-IT-GiuseppeMultilingualNeural", rate="-5%", pitch="+3Hz")
-            await communicate.save(filename)
-        
-        asyncio.run(_gen())
-        return filename
-    except Exception as e:
-        print("Errore voce:", e)
-        return None
-
 def chat(message, history):
     try:
         if not message or not str(message).strip():
@@ -44,9 +25,12 @@ def chat(message, history):
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
         if history:
-            for human, assistant in history:
-                messages.append({"role": "user", "content": str(human)})
-                messages.append({"role": "assistant", "content": str(assistant)})
+            for item in history:
+                if isinstance(item, dict):
+                    messages.append(item)
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    messages.append({"role": "user", "content": str(item[0])})
+                    messages.append({"role": "assistant", "content": str(item[1])})
 
         messages.append({"role": "user", "content": str(message)})
 
