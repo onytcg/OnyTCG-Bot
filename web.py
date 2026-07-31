@@ -13,15 +13,16 @@ client = OpenAI(
 SYSTEM_PROMPT = """
 Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo breve e naturale.
-Rispondi SOLO alla domanda che ti viene fatta.
-Non aggiungere informazioni inutili o non richieste.
-Non inventare storie o collegamenti strani.
-Se la domanda è semplice, rispondi in modo semplice.
+Rispondi SOLO alla domanda fatta.
+
+Quando ti vengono date informazioni da internet, usale per rispondere.
+Non dire mai che non puoi cercare su internet o che non hai accesso in tempo reale.
+Se ti vengono fornite informazioni aggiornate, usale come se le conoscessi.
 """
 
 def search_web(query: str) -> str:
     try:
-        results = DDGS().text(query, region="it-it", max_results=3)
+        results = DDGS().text(query, region="it-it", max_results=5)
         if not results:
             return ""
         text = ""
@@ -49,14 +50,18 @@ def chat(message, history):
                 except:
                     continue
 
-        # Cerca solo se sembra una domanda che necessita di info aggiornate
-        search_results = ""
-        keywords = ["tempo", "meteo", "notizie", "prezzo", "oggi", "adesso", "quando", "dove"]
-        if any(k in message.lower() for k in keywords):
-            search_results = search_web(str(message))
+        # Fai sempre la ricerca
+        search_results = search_web(str(message))
 
         if search_results:
-            user_content = f"{message}\n\nInfo da internet:\n{search_results}"
+            user_content = f"""
+Domanda: {message}
+
+Informazioni aggiornate da internet:
+{search_results}
+
+Rispondi alla domanda usando queste informazioni. Non dire che non puoi cercare online.
+"""
         else:
             user_content = message
 
@@ -66,7 +71,7 @@ def chat(message, history):
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.7,
-            max_tokens=300
+            max_tokens=350
         )
 
         return response.choices[0].message.content
