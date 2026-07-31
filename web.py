@@ -62,7 +62,7 @@ def generate_voice_sync(text: str) -> str:
     asyncio.run(_generate())
     return filename
 
-def chat(message, history):
+def respond(message, history):
     if history is None:
         history = []
     
@@ -70,14 +70,9 @@ def chat(message, history):
     
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    for item in history:
-        if isinstance(item, dict):
-            messages.append(item)
-        else:
-            # compatibilità vecchio formato
-            human, assistant = item
-            messages.append({"role": "user", "content": human})
-            messages.append({"role": "assistant", "content": assistant})
+    for human, assistant in history:
+        messages.append({"role": "user", "content": human})
+        messages.append({"role": "assistant", "content": assistant})
     
     enhanced = f"""
 Domanda dell'utente: {message}
@@ -99,27 +94,22 @@ Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
     reply = response.choices[0].message.content
     voice_file = generate_voice_sync(reply)
     
-    history = history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": reply}
-    ]
-    
+    history = history + [(message, reply)]
     return history, voice_file
 
 with gr.Blocks(title="OnyTCG") as demo:
     gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
     
-    chatbot = gr.Chatbot(height=400, type="messages")
+    chatbot = gr.Chatbot(height=400)
     msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
     audio_out = gr.Audio(label="Risposta vocale", autoplay=True)
     
-    def respond(message, history):
-        if not message:
-            return history, None
-        new_history, voice = chat(message, history)
-        return new_history, voice
+    def submit(message, history):
+        if not message.strip():
+            return history, None, ""
+        new_history, voice = respond(message, history)
+        return new_history, voice, ""
     
-    msg.submit(respond, [msg, chatbot], [chatbot, audio_out])
-    msg.submit(lambda: "", None, msg)
+    msg.submit(submit, [msg, chatbot], [chatbot, audio_out, msg])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
