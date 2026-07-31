@@ -1,9 +1,12 @@
 import os
+import tempfile
 import gradio as gr
 from openai import OpenAI
 from ddgs import DDGS
 import requests
 from bs4 import BeautifulSoup
+import edge_tts
+import asyncio
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -13,83 +16,65 @@ client = OpenAI(
 )
 
 SYSTEM_PROMPT = """
-Sei OnyTCG.
-Rispondi SEMPRE in italiano, in modo chiaro e diretto.
-
-Hai la capacità di cercare su internet e di leggere il contenuto delle pagine web.
-Quando ti vengono forniti i contenuti delle pagine, significa che le hai già aperte e lette.
-Non dire mai che non puoi aprire i link.
-Usa le informazioni fornite per rispondere.
+Sei OnyTCG, un ragazzo giovane e simpatico.
+Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
+Rispondi SOLO alla domanda fatta.
+Non inventare storie, film, libri o collegamenti inutili.
+Se la domanda è semplice (tipo "ci sei?", "ciao", "come stai"), rispondi in modo semplice.
+Non allungare inutilmente le risposte.
 """
 
 def get_page_content(url: str) -> str:
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        r = requests.get(url, headers=headers, timeout=12)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, headers=headers, timeout=6)
         if r.status_code != 200:
             return ""
-        
         soup = BeautifulSoup(r.text, "html.parser")
-        
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
-        
         text = soup.get_text(separator=" ", strip=True)
-        text = " ".join(text.split())
-        return text[:3500]
-    except Exception as e:
-        print(f"Errore pagina {url}:", e)
+        return " ".join(text.split())[:2000]
+    except:
         return ""
 
 def search_web(query: str) -> str:
     try:
-        results = []
-        
-        # Se parla del sito, cerca direttamente
-        if "onytcg" in query.lower():
-            results = list(DDGS().text("onytcg.it", region="it-it", max_results=5))
-            results += list(DDGS().text("site:onytcg.it", region="it-it", max_results=3))
-        else:
-            results = list(DDGS().text(query, region="it-it", max_results=5))
-
+        results = list(DDGS().text(query, region="it-it", max_results=3))
         if not results:
             return ""
-
         text = ""
-        seen_urls = set()
-        
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
-            
-            if href in seen_urls:
-                continue
-            seen_urls.add(href)
-            
-            text += f"=== PAGINA {i} ===\n"
-            text += f"Titolo: {title}\n"
-            text += f"Riassunto: {body}\n"
-            text += f"URL: {href}\n"
-            
+            text += f"{i}. {title}\n{body}\n"
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
-                    text += f"CONTENUTO LETTO:\n{content}\n"
-            
+                    text += f"Contenuto: {content}\n"
             text += "\n"
-        
         return text
-    except Exception as e:
-        print("Errore ricerca:", e)
+    except:
         return ""
+
+def generate_voice(text: str) -> str:
+    try:
+        clean_text = text.replace("*", "").replace("_", "").replace("#", "").replace("`", "").replace("\n", ". ")
+        clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi").replace("onytcg.it", "oni ti ci gi punto it")
+        filename = tempfile.mktemp(suffix=".mp3")
+        async def _gen():
+            communicate = edge_tts.Communicate(clean_text, "it-IT-GiuseppeMultilingualNeural", rate="-5%", pitch="+3Hz")
+            await communicate.save(filename)
+        asyncio.run(_gen())
+        return filename
+    except:
+        return None
 
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return "Scrivi pure!"
+            return history, None, ""
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
@@ -104,42 +89,42 @@ def chat(message, history):
                 except:
                     continue
 
-        search_results = search_web(str(message))
+        search_results = ""
+        keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove"]
+        if any(k in message.lower() for k in keywords):
+            search_results = search_web(str(message))
 
         if search_results:
-            user_content = f"""
-Ho cercato e aperto le pagine per te.
-
-Domanda: {message}
-
-Ecco cosa ho trovato e letto:
-
-{search_results}
-
-Rispondi alla domanda usando queste informazioni. Hai già aperto e letto le pagine.
-"""
+            user_content = f"Domanda: {message}\n\nInfo trovate:\n{search_results}\n\nRispondi in modo breve e preciso."
         else:
             user_content = message
 
         messages.append({"role": "user", "content": user_content})
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=messages,
             temperature=0.3,
-            max_tokens=500
+            max_tokens=300
         )
 
-        return response.choices[0].message.content
+        reply = response.choices[0].message.content
+        voice_file = generate_voice(reply)
+        
+        history = history + [(message, reply)]
+        return history, voice_file, ""
 
     except Exception as e:
         print("Errore:", e)
-        return "Scusa, riprova pure."
+        return history, None, ""
 
-demo = gr.ChatInterface(
-    fn=chat,
-    title="OnyTCG 🤖",
-    description="Il tuo assistente personale"
-)
+with gr.Blocks(title="OnyTCG") as demo:
+    gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
+    
+    chatbot = gr.Chatbot(height=400)
+    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
+    audio_out = gr.Audio(label="Voce", autoplay=True)
+    
+    msg.submit(chat, [msg, chatbot], [chatbot, audio_out, msg])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
