@@ -11,27 +11,22 @@ client = OpenAI(
 )
 
 SYSTEM_PROMPT = """
-Sei OnyTCG, un ragazzo giovane, simpatico e intelligente.
-Lavori per onytcg.it (negozio di carte collezionabili), ma sei soprattutto un amico con cui parlare.
-
-Parla sempre in italiano in modo molto naturale, come se stessi chattando con un amico su WhatsApp.
-Usa frasi corte, semplici e spontanee.
-Puoi usare espressioni tipo “dai”, “guarda”, “sì”, “tipo”, “insomma”.
-Fai domande di tanto in tanto.
-Non parlare come un manuale o come un’assistente formale.
-Se non sai qualcosa, dillo in modo leggero.
-Puoi essere ironico e un po’ spiritoso.
-Quando usi informazioni da internet, trasformale in un discorso naturale, non elencare i risultati come un robot.
+Sei OnyTCG, un ragazzo giovane e simpatico.
+Rispondi SEMPRE in italiano, in modo breve e naturale.
+Rispondi SOLO alla domanda che ti viene fatta.
+Non aggiungere informazioni inutili o non richieste.
+Non inventare storie o collegamenti strani.
+Se la domanda è semplice, rispondi in modo semplice.
 """
 
 def search_web(query: str) -> str:
     try:
-        results = DDGS().text(query, region="it-it", max_results=4)
+        results = DDGS().text(query, region="it-it", max_results=3)
         if not results:
             return ""
         text = ""
-        for i, r in enumerate(results, 1):
-            text += f"{i}. {r.get('title', '')}\n{r.get('body', '')}\n\n"
+        for r in results:
+            text += f"- {r.get('title', '')}: {r.get('body', '')}\n"
         return text
     except:
         return ""
@@ -39,50 +34,46 @@ def search_web(query: str) -> str:
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return "Scrivi pure qualcosa!"
+            return "Scrivi pure!"
 
-        # Gestione sicura della history
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
         if history:
             for item in history:
                 try:
                     if isinstance(item, (list, tuple)) and len(item) >= 2:
-                        human, assistant = item[0], item[1]
-                        messages.append({"role": "user", "content": str(human)})
-                        messages.append({"role": "assistant", "content": str(assistant)})
+                        messages.append({"role": "user", "content": str(item[0])})
+                        messages.append({"role": "assistant", "content": str(item[1])})
                     elif isinstance(item, dict):
-                        role = item.get("role", "user")
-                        content = item.get("content", "")
-                        messages.append({"role": role, "content": str(content)})
+                        messages.append({"role": item.get("role", "user"), "content": str(item.get("content", ""))})
                 except:
                     continue
 
-        search_results = search_web(str(message))
+        # Cerca solo se sembra una domanda che necessita di info aggiornate
+        search_results = ""
+        keywords = ["tempo", "meteo", "notizie", "prezzo", "oggi", "adesso", "quando", "dove"]
+        if any(k in message.lower() for k in keywords):
+            search_results = search_web(str(message))
 
-        enhanced = f"""
-Domanda dell'utente: {message}
+        if search_results:
+            user_content = f"{message}\n\nInfo da internet:\n{search_results}"
+        else:
+            user_content = message
 
-Informazioni trovate su internet:
-{search_results}
-
-Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
-"""
-        messages.append({"role": "user", "content": enhanced})
+        messages.append({"role": "user", "content": user_content})
 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.85,
-            max_tokens=450
+            temperature=0.7,
+            max_tokens=300
         )
 
         return response.choices[0].message.content
 
     except Exception as e:
-        print("=== ERRORE ===")
-        print(e)
-        return "Scusa, ho avuto un piccolo problema. Puoi ripetere la domanda?"
+        print("Errore:", e)
+        return "Scusa, riprova pure."
 
 demo = gr.ChatInterface(
     fn=chat,
