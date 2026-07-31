@@ -53,12 +53,12 @@ async def generate_voice(text: str, filename: str = "voice.mp3"):
     clean_text = clean_text.replace("`", "")
     clean_text = clean_text.replace("\n", ". ")
     
-    # Voce più lenta e chiara
+    # Voce un po’ più energica
     communicate = edge_tts.Communicate(
         clean_text, 
         "it-IT-DiegoNeural",
-        rate="-10%",
-        pitch="+0Hz"
+        rate="-5%",
+        pitch="+5Hz"
     )
     await communicate.save(filename)
     return filename
