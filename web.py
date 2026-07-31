@@ -122,7 +122,7 @@ def generate_voice(text: str):
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return "Scrivi pure!"
+            return history or [], None
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
@@ -166,36 +166,35 @@ Se trovi link utili, mettili nella risposta.
         )
 
         reply = response.choices[0].message.content
+        voice_file = generate_voice(reply)
         
-        # Genera la voce e la salva in una variabile globale per il pulsante
-        global last_voice
-        last_voice = generate_voice(reply)
+        # Formato moderno per Gradio
+        new_history = (history or []) + [
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": reply}
+        ]
         
-        return reply
+        return new_history, voice_file
 
     except Exception as e:
         print("Errore:", e)
-        return "Scusa, riprova pure."
-
-last_voice = None
-
-def get_voice():
-    global last_voice
-    return last_voice
+        new_history = (history or []) + [
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": "Scusa, riprova pure."}
+        ]
+        return new_history, None
 
 with gr.Blocks(title="OnyTCG") as demo:
     gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
     
-    chatbot = gr.ChatInterface(
-        fn=chat,
-        title="",
-        description=""
-    )
+    chatbot = gr.Chatbot(height=400, type="messages")
+    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio", show_label=False)
+    audio_out = gr.Audio(label="Voce", autoplay=True)
     
-    with gr.Row():
-        voice_btn = gr.Button("🔊 Ascolta l'ultima risposta")
-        audio_out = gr.Audio(label="Voce", autoplay=True)
+    def respond(message, history):
+        new_history, voice = chat(message, history)
+        return new_history, voice, ""
     
-    voice_btn.click(get_voice, outputs=audio_out)
+    msg.submit(respond, [msg, chatbot], [chatbot, audio_out, msg])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
