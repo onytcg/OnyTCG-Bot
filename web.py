@@ -24,13 +24,20 @@ def chat(message, history):
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
+        # Pulisce la history e tiene solo role + content
         if history:
             for item in history:
-                if isinstance(item, dict):
-                    messages.append(item)
-                elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                    messages.append({"role": "user", "content": str(item[0])})
-                    messages.append({"role": "assistant", "content": str(item[1])})
+                try:
+                    if isinstance(item, dict):
+                        role = item.get("role", "user")
+                        content = item.get("content", "")
+                        if role and content:
+                            messages.append({"role": role, "content": str(content)})
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                        messages.append({"role": "user", "content": str(item[0])})
+                        messages.append({"role": "assistant", "content": str(item[1])})
+                except:
+                    continue
 
         messages.append({"role": "user", "content": str(message)})
 
