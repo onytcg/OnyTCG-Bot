@@ -2,6 +2,8 @@ import os
 import gradio as gr
 from openai import OpenAI
 from ddgs import DDGS
+import requests
+from bs4 import BeautifulSoup
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -15,41 +17,53 @@ Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo breve e naturale.
 Rispondi SOLO alla domanda fatta.
 
-Quando ti vengono date informazioni da internet, usale per rispondere.
-Non dire mai che non puoi cercare online.
-Se le informazioni dicono che un sito esiste, dillo.
+Quando ti vengono date informazioni da internet o dal contenuto di pagine web, usale per rispondere.
+Non dire mai che non puoi cercare online o aprire link.
 """
+
+def get_page_content(url: str) -> str:
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        r = requests.get(url, headers=headers, timeout=8)
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        # Rimuove script e style
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        
+        text = soup.get_text(separator=" ", strip=True)
+        return text[:2500]  # limita la lunghezza
+    except:
+        return ""
 
 def search_web(query: str) -> str:
     try:
-        # Cerca sia la query normale sia versioni più precise
         results = []
-        
         with DDGS() as ddgs:
-            # Prima ricerca normale
-            for r in ddgs.text(query, region="it-it", max_results=5):
+            for r in ddgs.text(query, region="it-it", max_results=4):
                 results.append(r)
-            
-            # Se parla di un sito, cerca anche direttamente il dominio
-            if "onytcg" in query.lower() or "sito" in query.lower():
-                for r in ddgs.text("onytcg.it", region="it-it", max_results=3):
-                    results.append(r)
-                for r in ddgs.text("site:onytcg.it", region="it-it", max_results=3):
-                    results.append(r)
 
         if not results:
             return ""
 
         text = ""
-        seen = set()
         for r in results:
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
-            key = title + body
-            if key not in seen:
-                seen.add(key)
-                text += f"- {title}\n  {body}\n  Link: {href}\n\n"
+            
+            text += f"Titolo: {title}\nSnippet: {body}\nLink: {href}\n"
+            
+            # Apre e legge il contenuto della pagina
+            if href:
+                content = get_page_content(href)
+                if content:
+                    text += f"Contenuto della pagina:\n{content}\n"
+            
+            text += "\n---\n"
+        
         return text
     except Exception as e:
         print("Errore ricerca:", e)
@@ -79,10 +93,10 @@ def chat(message, history):
             user_content = f"""
 Domanda dell'utente: {message}
 
-Risultati della ricerca su internet:
+Risultati dalla ricerca e contenuto delle pagine:
 {search_results}
 
-Usa questi risultati per rispondere alla domanda.
+Usa queste informazioni per rispondere alla domanda.
 """
         else:
             user_content = message
@@ -93,7 +107,7 @@ Usa questi risultati per rispondere alla domanda.
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.6,
-            max_tokens=400
+            max_tokens=450
         )
 
         return response.choices[0].message.content
