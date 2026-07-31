@@ -16,13 +16,10 @@ SYSTEM_PROMPT = """
 Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
 Rispondi SOLO alla domanda fatta.
-Non inventare storie o collegamenti inutili.
-
-REGOLE IMPORTANTI:
-- Il sito ufficiale è https://onytcg.it
-- Quando ti chiedono il link del sito, dai SEMPRE https://onytcg.it
-- Non dire mai che non puoi fornire il link
-- Se trovi link utili nelle informazioni, mettili nella risposta
+Non inventare informazioni.
+Se non trovi niente di concreto, dillo chiaramente.
+Quando trovi link, mettili nella risposta.
+Il sito ufficiale è https://onytcg.it
 """
 
 def clean_content(content):
@@ -58,22 +55,45 @@ def get_page_content(url: str) -> str:
 
 def search_web(query: str) -> str:
     try:
-        results = list(DDGS().text(query, region="it-it", max_results=3))
+        results = []
+        
+        # Ricerca web normale
+        results += list(DDGS().text(query, region="it-it", max_results=4))
+        
+        # Ricerca social
+        words = query.lower().split()
+        if len(words) >= 2:
+            results += list(DDGS().text(f"{query} facebook", region="it-it", max_results=2))
+            results += list(DDGS().text(f"{query} instagram", region="it-it", max_results=2))
+            results += list(DDGS().text(f"{query} linkedin", region="it-it", max_results=2))
+            results += list(DDGS().text(f'"{query}"', region="it-it", max_results=2))
+
         if not results:
             return ""
+
         text = ""
+        seen = set()
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
+            
+            key = title + href
+            if key in seen:
+                continue
+            seen.add(key)
+            
             text += f"{i}. {title}\n{body}\nLink: {href}\n"
+            
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
                     text += f"Contenuto: {content}\n"
             text += "\n"
+        
         return text
-    except:
+    except Exception as e:
+        print("Errore ricerca:", e)
         return ""
 
 def chat(message, history):
@@ -97,21 +117,18 @@ def chat(message, history):
                 except:
                     continue
 
-        search_results = ""
-        keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove", "link"]
-        if any(k in message.lower() for k in keywords):
-            search_results = search_web(str(message))
+        search_results = search_web(str(message))
 
         if search_results:
             user_content = f"""
 Domanda: {message}
 
-Info trovate:
+Risultati della ricerca (web + social):
 {search_results}
 
-Rispondi in modo breve e preciso.
-Se chiedono il link di onytcg, dai https://onytcg.it
-Se trovi altri link utili, mettili nella risposta.
+Rispondi in modo breve e preciso usando solo queste informazioni.
+Se non trovi niente di concreto, dillo chiaramente.
+Se trovi link utili, mettili nella risposta.
 """
         else:
             user_content = str(message)
@@ -122,7 +139,7 @@ Se trovi altri link utili, mettili nella risposta.
             model="llama-3.1-8b-instant",
             messages=messages,
             temperature=0.3,
-            max_tokens=300
+            max_tokens=350
         )
 
         return response.choices[0].message.content
