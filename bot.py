@@ -2,6 +2,8 @@ import asyncio
 import os
 import sys
 import edge_tts
+import requests
+from bs4 import BeautifulSoup
 from openai import OpenAI
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -18,51 +20,87 @@ client = OpenAI(
 conversation_memory = {}
 
 SYSTEM_PROMPT = """
-Sei OnyTCG, un ragazzo giovane, simpatico e intelligente.
-Lavori per onytcg.it (negozio di carte collezionabili), ma sei soprattutto un amico con cui parlare.
+Sei OnyTCG.
+Rispondi SEMPRE in italiano, in modo chiaro e diretto.
 
-Parla sempre in italiano in modo molto naturale, come se stessi chattando con un amico su WhatsApp.
-Usa frasi corte, semplici e spontanee.
-Puoi usare espressioni tipo “dai”, “guarda”, “sì”, “tipo”, “insomma”.
-Fai domande di tanto in tanto.
-Non parlare come un manuale o come un’assistente formale.
-Se non sai qualcosa, dillo in modo leggero.
-Puoi essere ironico e un po’ spiritoso.
-Quando usi informazioni da internet, trasformale in un discorso naturale, non elencare i risultati come un robot.
+Hai la capacità di cercare su internet e di leggere il contenuto delle pagine web.
+Quando ti vengono forniti i contenuti delle pagine, significa che le hai già aperte e lette.
+Non dire mai che non puoi aprire i link.
+Usa le informazioni fornite per rispondere.
 """
+
+def get_page_content(url: str) -> str:
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        r = requests.get(url, headers=headers, timeout=12)
+        if r.status_code != 200:
+            return ""
+        
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+        
+        text = soup.get_text(separator=" ", strip=True)
+        text = " ".join(text.split())
+        return text[:3500]
+    except Exception as e:
+        print(f"Errore pagina {url}:", e)
+        return ""
 
 def search_web(query: str) -> str:
     try:
-        results = DDGS().text(query, region="it-it", max_results=5)
-        if not results:
-            return "Nessun risultato trovato."
+        results = []
         
+        if "onytcg" in query.lower():
+            results = list(DDGS().text("onytcg.it", region="it-it", max_results=5))
+            results += list(DDGS().text("site:onytcg.it", region="it-it", max_results=3))
+        else:
+            results = list(DDGS().text(query, region="it-it", max_results=5))
+
+        if not results:
+            return ""
+
         text = ""
+        seen_urls = set()
+        
         for i, r in enumerate(results, 1):
-            text += f"{i}. {r.get('title', '')}\n{r.get('body', '')}\n\n"
+            title = r.get("title", "")
+            body = r.get("body", "")
+            href = r.get("href", "")
+            
+            if href in seen_urls:
+                continue
+            seen_urls.add(href)
+            
+            text += f"=== PAGINA {i} ===\n"
+            text += f"Titolo: {title}\n"
+            text += f"Riassunto: {body}\n"
+            text += f"URL: {href}\n"
+            
+            if href and href.startswith("http"):
+                content = get_page_content(href)
+                if content:
+                    text += f"CONTENUTO LETTO:\n{content}\n"
+            
+            text += "\n"
+        
         return text
     except Exception as e:
-        return f"Errore nella ricerca: {e}"
+        print("Errore ricerca:", e)
+        return ""
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
-    # Pulisce e corregge la pronuncia
     clean_text = text
-    clean_text = clean_text.replace("*", "")
-    clean_text = clean_text.replace("_", "")
-    clean_text = clean_text.replace("#", "")
-    clean_text = clean_text.replace("`", "")
+    clean_text = clean_text.replace("*", "").replace("_", "").replace("#", "").replace("`", "")
     clean_text = clean_text.replace("\n", ". ")
-    
-    # Correzione pronuncia OnyTCG
     clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi")
-    clean_text = clean_text.replace("Onytcg", "Oni Ti Ci Gi")
     clean_text = clean_text.replace("onytcg.it", "oni ti ci gi punto it")
-    clean_text = clean_text.replace("Onytcg.it", "oni ti ci gi punto it")
-    clean_text = clean_text.replace("ON Y TCG", "Oni Ti Ci Gi")
     
-    # Voce più naturale
     communicate = edge_tts.Communicate(
-        clean_text, 
+        clean_text,
         "it-IT-GiuseppeMultilingualNeural",
         rate="-5%",
         pitch="+3Hz"
@@ -74,17 +112,22 @@ async def get_ai_response(user_id: int, message: str) -> str:
     if user_id not in conversation_memory:
         conversation_memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    # Cerca su internet informazioni aggiornate
     search_results = search_web(message)
     
-    enhanced_message = f"""
-Domanda dell'utente: {message}
+    if search_results:
+        enhanced_message = f"""
+Ho cercato e aperto le pagine per te.
 
-Informazioni trovate su internet:
+Domanda: {message}
+
+Ecco cosa ho trovato e letto:
+
 {search_results}
 
-Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
+Rispondi alla domanda usando queste informazioni. Hai già aperto e letto le pagine.
 """
+    else:
+        enhanced_message = message
     
     conversation_memory[user_id].append({"role": "user", "content": enhanced_message})
     
@@ -94,8 +137,8 @@ Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=conversation_memory[user_id],
-        temperature=0.85,
-        max_tokens=450
+        temperature=0.3,
+        max_tokens=500
     )
     
     ai_reply = response.choices[0].message.content
