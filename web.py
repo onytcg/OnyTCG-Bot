@@ -63,13 +63,21 @@ def generate_voice_sync(text: str) -> str:
     return filename
 
 def chat(message, history):
+    if history is None:
+        history = []
+    
     search_results = search_web(message)
     
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    for human, assistant in history:
-        messages.append({"role": "user", "content": human})
-        messages.append({"role": "assistant", "content": assistant})
+    for item in history:
+        if isinstance(item, dict):
+            messages.append(item)
+        else:
+            # compatibilità vecchio formato
+            human, assistant = item
+            messages.append({"role": "user", "content": human})
+            messages.append({"role": "assistant", "content": assistant})
     
     enhanced = f"""
 Domanda dell'utente: {message}
@@ -91,20 +99,27 @@ Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
     reply = response.choices[0].message.content
     voice_file = generate_voice_sync(reply)
     
-    return reply, voice_file
+    history = history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": reply}
+    ]
+    
+    return history, voice_file
 
 with gr.Blocks(title="OnyTCG") as demo:
     gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
     
-    chatbot = gr.Chatbot(height=400)
+    chatbot = gr.Chatbot(height=400, type="messages")
     msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
     audio_out = gr.Audio(label="Risposta vocale", autoplay=True)
     
     def respond(message, history):
-        reply, voice = chat(message, history)
-        history = history + [(message, reply)]
-        return history, "", voice
+        if not message:
+            return history, None
+        new_history, voice = chat(message, history)
+        return new_history, voice
     
-    msg.submit(respond, [msg, chatbot], [chatbot, msg, audio_out])
+    msg.submit(respond, [msg, chatbot], [chatbot, audio_out])
+    msg.submit(lambda: "", None, msg)
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
