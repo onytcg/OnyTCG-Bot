@@ -5,6 +5,7 @@ import edge_tts
 from openai import OpenAI
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from ddgs import DDGS
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -22,11 +23,25 @@ Lavori per il negozio di carte collezionabili onytcg.it, ma sei anche un assiste
 
 Puoi rispondere a qualsiasi domanda: cultura generale, tecnologia, consigli, spiegazioni, chiacchiere, problemi pratici, e anche domande relative al negozio di carte.
 
+Quando ricevi informazioni da internet, usale per rispondere in modo preciso e aggiornato.
 Parla sempre in italiano in modo naturale, chiaro e amichevole.
 Usa frasi non troppo lunghe.
 Se non sai qualcosa con certezza, dillo onestamente.
 Puoi essere un po’ ironico e simpatico.
 """
+
+def search_web(query: str) -> str:
+    try:
+        results = DDGS().text(query, region="it-it", max_results=5)
+        if not results:
+            return "Nessun risultato trovato."
+        
+        text = ""
+        for i, r in enumerate(results, 1):
+            text += f"{i}. {r.get('title', '')}\n{r.get('body', '')}\n\n"
+        return text
+    except Exception as e:
+        return f"Errore nella ricerca: {e}"
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
     communicate = edge_tts.Communicate(text, "it-IT-DiegoNeural")
@@ -37,7 +52,19 @@ async def get_ai_response(user_id: int, message: str) -> str:
     if user_id not in conversation_memory:
         conversation_memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    conversation_memory[user_id].append({"role": "user", "content": message})
+    # Cerca su internet informazioni aggiornate
+    search_results = search_web(message)
+    
+    enhanced_message = f"""
+Domanda dell'utente: {message}
+
+Informazioni trovate su internet:
+{search_results}
+
+Rispondi usando queste informazioni se sono utili.
+"""
+    
+    conversation_memory[user_id].append({"role": "user", "content": enhanced_message})
     
     if len(conversation_memory[user_id]) > 22:
         conversation_memory[user_id] = [conversation_memory[user_id][0]] + conversation_memory[user_id][-20:]
@@ -45,7 +72,7 @@ async def get_ai_response(user_id: int, message: str) -> str:
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=conversation_memory[user_id],
-        temperature=0.8,
+        temperature=0.7,
         max_tokens=500
     )
     
