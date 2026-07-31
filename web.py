@@ -1,9 +1,12 @@
 import os
+import tempfile
 import gradio as gr
 from openai import OpenAI
 from ddgs import DDGS
 import requests
 from bs4 import BeautifulSoup
+import edge_tts
+import asyncio
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -95,22 +98,39 @@ def search_web(query: str) -> str:
         print("Errore ricerca:", e)
         return ""
 
+def generate_voice(text: str):
+    try:
+        clean_text = text.replace("*", "").replace("_", "").replace("#", "").replace("`", "").replace("\n", ". ")
+        clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi").replace("onytcg.it", "oni ti ci gi punto it")
+        
+        filename = tempfile.mktemp(suffix=".mp3")
+        
+        async def _gen():
+            communicate = edge_tts.Communicate(
+                clean_text,
+                "it-IT-GiuseppeMultilingualNeural",
+                rate="-5%",
+                pitch="+3Hz"
+            )
+            await communicate.save(filename)
+        
+        asyncio.run(_gen())
+        return filename
+    except Exception as e:
+        print("Errore voce:", e)
+        return None
+
 def chat(message, history):
     try:
         if not message or not str(message).strip():
-            return "Scrivi pure!"
+            return history or [], None, ""
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
         if history:
             for item in history:
                 try:
-                    if isinstance(item, dict):
-                        role = item.get("role", "user")
-                        content = clean_content(item.get("content", ""))
-                        if role and content:
-                            messages.append({"role": role, "content": content})
-                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
                         messages.append({"role": "user", "content": clean_content(item[0])})
                         messages.append({"role": "assistant", "content": clean_content(item[1])})
                 except:
@@ -141,16 +161,24 @@ Se trovi link utili, mettili nella risposta.
             max_tokens=300
         )
 
-        return response.choices[0].message.content
+        reply = response.choices[0].message.content
+        voice_file = generate_voice(reply)
+        
+        new_history = (history or []) + [(message, reply)]
+        return new_history, voice_file, ""
 
     except Exception as e:
         print("Errore:", e)
-        return "Scusa, riprova pure."
+        new_history = (history or []) + [(message, "Scusa, riprova pure.")]
+        return new_history, None, ""
 
-demo = gr.ChatInterface(
-    fn=chat,
-    title="OnyTCG 🤖",
-    description="Il tuo assistente personale"
-)
+with gr.Blocks(title="OnyTCG") as demo:
+    gr.Markdown("# OnyTCG 🤖\nIl tuo assistente personale")
+    
+    chatbot = gr.Chatbot(height=400)
+    msg = gr.Textbox(placeholder="Scrivi qui...", label="Messaggio")
+    audio_out = gr.Audio(label="Voce", autoplay=True)
+    
+    msg.submit(chat, [msg, chatbot], [chatbot, audio_out, msg])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
