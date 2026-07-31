@@ -29,49 +29,31 @@ Quando usi informazioni da internet, trasformale in un discorso naturale, non el
 
 def search_web(query: str) -> str:
     try:
-        results = DDGS().text(query, region="it-it", max_results=5)
+        results = DDGS().text(query, region="it-it", max_results=4)
         if not results:
-            return "Nessun risultato trovato."
+            return ""
         text = ""
         for i, r in enumerate(results, 1):
             text += f"{i}. {r.get('title', '')}\n{r.get('body', '')}\n\n"
         return text
-    except Exception as e:
-        return f"Errore nella ricerca: {e}"
-
-def generate_voice_sync(text: str) -> str:
-    clean_text = text
-    clean_text = clean_text.replace("*", "").replace("_", "").replace("#", "").replace("`", "")
-    clean_text = clean_text.replace("\n", ". ")
-    clean_text = clean_text.replace("OnyTCG", "Oni Ti Ci Gi")
-    clean_text = clean_text.replace("Onytcg", "Oni Ti Ci Gi")
-    clean_text = clean_text.replace("onytcg.it", "oni ti ci gi punto it")
-    clean_text = clean_text.replace("Onytcg.it", "oni ti ci gi punto it")
-
-    filename = tempfile.mktemp(suffix=".mp3")
-    
-    async def _generate():
-        communicate = edge_tts.Communicate(
-            clean_text,
-            "it-IT-GiuseppeMultilingualNeural",
-            rate="-5%",
-            pitch="+3Hz"
-        )
-        await communicate.save(filename)
-    
-    asyncio.run(_generate())
-    return filename
+    except:
+        return ""
 
 def chat(message, history):
-    search_results = search_web(message)
-    
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
-    for human, assistant in history:
-        messages.append({"role": "user", "content": human})
-        messages.append({"role": "assistant", "content": assistant})
-    
-    enhanced = f"""
+    try:
+        if not message or not message.strip():
+            return "Scrivi pure qualcosa!"
+        
+        search_results = search_web(message)
+        
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        if history:
+            for human, assistant in history:
+                messages.append({"role": "user", "content": str(human)})
+                messages.append({"role": "assistant", "content": str(assistant)})
+        
+        enhanced = f"""
 Domanda dell'utente: {message}
 
 Informazioni trovate su internet:
@@ -79,17 +61,21 @@ Informazioni trovate su internet:
 
 Rispondi usando queste informazioni se sono utili, ma parla in modo naturale.
 """
-    messages.append({"role": "user", "content": enhanced})
-    
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=messages,
-        temperature=0.85,
-        max_tokens=450
-    )
-    
-    reply = response.choices[0].message.content
-    return reply
+        messages.append({"role": "user", "content": enhanced})
+        
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.85,
+            max_tokens=450
+        )
+        
+        reply = response.choices[0].message.content
+        return reply
+        
+    except Exception as e:
+        print("Errore:", e)
+        return "Scusa, ho avuto un piccolo problema. Puoi ripetere la domanda?"
 
 demo = gr.ChatInterface(
     fn=chat,
