@@ -22,11 +22,14 @@ conversation_memory = {}
 SYSTEM_PROMPT = """
 Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
-Rispondi SOLO alla domanda fatta.
-Non inventare informazioni.
-Se non trovi niente di concreto, dillo chiaramente.
-Quando trovi link, mettili nella risposta.
-Il sito ufficiale è https://onytcg.it
+
+REGOLE DI PRECISIONE (obbligatorie):
+1. Usa SOLO le informazioni che ti vengono fornite dalla ricerca.
+2. Non inventare mai fatti, nomi, link o dettagli.
+3. Se le informazioni non sono chiare o incomplete, dillo chiaramente.
+4. Se non trovi niente di concreto, rispondi: "Non ho trovato informazioni precise su questo."
+5. Quando trovi link, mettili nella risposta.
+6. Il sito ufficiale è https://onytcg.it
 """
 
 def get_page_content(url: str) -> str:
@@ -47,10 +50,8 @@ def search_web(query: str) -> str:
     try:
         results = []
         
-        # Ricerca web normale
         results += list(DDGS().text(query, region="it-it", max_results=2))
         
-        # Ricerca social
         words = query.lower().split()
         if len(words) >= 2:
             results += list(DDGS().text(f"{query} facebook", region="it-it", max_results=1))
@@ -110,7 +111,7 @@ Domanda: {message}
 Risultati della ricerca (web + social):
 {search_results}
 
-Rispondi in modo breve e preciso usando solo queste informazioni.
+Rispondi in modo breve e preciso usando SOLO queste informazioni.
 Se non trovi niente di concreto, dillo chiaramente.
 Se trovi link utili, mettili nella risposta.
 """
@@ -125,7 +126,7 @@ Se trovi link utili, mettili nella risposta.
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=conversation_memory[user_id],
-        temperature=0.3,
+        temperature=0.2,
         max_tokens=300
     )
     
