@@ -45,7 +45,21 @@ def search_web(query: str) -> str:
         return f"Errore nella ricerca: {e}"
 
 async def generate_voice(text: str, filename: str = "voice.mp3"):
-    communicate = edge_tts.Communicate(text, "it-IT-DiegoNeural")
+    # Pulisce il testo per una pronuncia migliore
+    clean_text = text
+    clean_text = clean_text.replace("*", "")
+    clean_text = clean_text.replace("_", "")
+    clean_text = clean_text.replace("#", "")
+    clean_text = clean_text.replace("`", "")
+    clean_text = clean_text.replace("\n", ". ")
+    
+    # Voce più lenta e chiara
+    communicate = edge_tts.Communicate(
+        clean_text, 
+        "it-IT-DiegoNeural",
+        rate="-10%",
+        pitch="+0Hz"
+    )
     await communicate.save(filename)
     return filename
 
