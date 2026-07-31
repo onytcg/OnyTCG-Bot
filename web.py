@@ -49,7 +49,7 @@ def get_page_content(url: str) -> str:
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         text = soup.get_text(separator=" ", strip=True)
-        return " ".join(text.split())[:2000]
+        return " ".join(text.split())[:800]
     except:
         return ""
 
@@ -58,15 +58,14 @@ def search_web(query: str) -> str:
         results = []
         
         # Ricerca web normale
-        results += list(DDGS().text(query, region="it-it", max_results=4))
+        results += list(DDGS().text(query, region="it-it", max_results=2))
         
         # Ricerca social
         words = query.lower().split()
         if len(words) >= 2:
-            results += list(DDGS().text(f"{query} facebook", region="it-it", max_results=2))
-            results += list(DDGS().text(f"{query} instagram", region="it-it", max_results=2))
-            results += list(DDGS().text(f"{query} linkedin", region="it-it", max_results=2))
-            results += list(DDGS().text(f'"{query}"', region="it-it", max_results=2))
+            results += list(DDGS().text(f"{query} facebook", region="it-it", max_results=1))
+            results += list(DDGS().text(f"{query} instagram", region="it-it", max_results=1))
+            results += list(DDGS().text(f"{query} linkedin", region="it-it", max_results=1))
 
         if not results:
             return ""
@@ -83,15 +82,14 @@ def search_web(query: str) -> str:
                 continue
             seen.add(key)
             
-            text += f"{i}. {title}\n{body}\nLink: {href}\n"
+            text += f"{i}. {title}\n{body}\nLink: {href}\n\n"
             
-            if href and href.startswith("http"):
+            if href and "onytcg" in href.lower():
                 content = get_page_content(href)
                 if content:
-                    text += f"Contenuto: {content}\n"
-            text += "\n"
+                    text += f"Contenuto: {content}\n\n"
         
-        return text
+        return text[:3000]
     except Exception as e:
         print("Errore ricerca:", e)
         return ""
@@ -139,7 +137,7 @@ Se trovi link utili, mettili nella risposta.
             model="llama-3.1-8b-instant",
             messages=messages,
             temperature=0.3,
-            max_tokens=350
+            max_tokens=300
         )
 
         return response.choices[0].message.content
