@@ -16,20 +16,43 @@ Rispondi SEMPRE in italiano, in modo breve e naturale.
 Rispondi SOLO alla domanda fatta.
 
 Quando ti vengono date informazioni da internet, usale per rispondere.
-Non dire mai che non puoi cercare su internet o che non hai accesso in tempo reale.
-Se ti vengono fornite informazioni aggiornate, usale come se le conoscessi.
+Non dire mai che non puoi cercare online.
+Se le informazioni dicono che un sito esiste, dillo.
 """
 
 def search_web(query: str) -> str:
     try:
-        results = DDGS().text(query, region="it-it", max_results=5)
+        # Cerca sia la query normale sia versioni più precise
+        results = []
+        
+        with DDGS() as ddgs:
+            # Prima ricerca normale
+            for r in ddgs.text(query, region="it-it", max_results=5):
+                results.append(r)
+            
+            # Se parla di un sito, cerca anche direttamente il dominio
+            if "onytcg" in query.lower() or "sito" in query.lower():
+                for r in ddgs.text("onytcg.it", region="it-it", max_results=3):
+                    results.append(r)
+                for r in ddgs.text("site:onytcg.it", region="it-it", max_results=3):
+                    results.append(r)
+
         if not results:
             return ""
+
         text = ""
+        seen = set()
         for r in results:
-            text += f"- {r.get('title', '')}: {r.get('body', '')}\n"
+            title = r.get("title", "")
+            body = r.get("body", "")
+            href = r.get("href", "")
+            key = title + body
+            if key not in seen:
+                seen.add(key)
+                text += f"- {title}\n  {body}\n  Link: {href}\n\n"
         return text
-    except:
+    except Exception as e:
+        print("Errore ricerca:", e)
         return ""
 
 def chat(message, history):
@@ -50,17 +73,16 @@ def chat(message, history):
                 except:
                     continue
 
-        # Fai sempre la ricerca
         search_results = search_web(str(message))
 
         if search_results:
             user_content = f"""
-Domanda: {message}
+Domanda dell'utente: {message}
 
-Informazioni aggiornate da internet:
+Risultati della ricerca su internet:
 {search_results}
 
-Rispondi alla domanda usando queste informazioni. Non dire che non puoi cercare online.
+Usa questi risultati per rispondere alla domanda.
 """
         else:
             user_content = message
@@ -70,8 +92,8 @@ Rispondi alla domanda usando queste informazioni. Non dire che non puoi cercare 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.7,
-            max_tokens=350
+            temperature=0.6,
+            max_tokens=400
         )
 
         return response.choices[0].message.content
