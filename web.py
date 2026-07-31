@@ -17,11 +17,15 @@ Sei OnyTCG, un ragazzo giovane e simpatico.
 Rispondi SEMPRE in italiano, in modo naturale, breve e diretto.
 Rispondi SOLO alla domanda fatta.
 Non inventare storie o collegamenti inutili.
-Se la domanda è semplice, rispondi in modo semplice.
+
+REGOLE IMPORTANTI:
+- Il sito ufficiale è https://onytcg.it
+- Quando ti chiedono il link del sito, dai SEMPRE https://onytcg.it
+- Non dire mai che non puoi fornire il link
+- Se trovi link utili nelle informazioni, mettili nella risposta
 """
 
 def clean_content(content):
-    """Pulisce il contenuto da formati strani di Gradio"""
     if content is None:
         return ""
     if isinstance(content, str):
@@ -62,7 +66,7 @@ def search_web(query: str) -> str:
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
-            text += f"{i}. {title}\n{body}\n"
+            text += f"{i}. {title}\n{body}\nLink: {href}\n"
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
@@ -93,14 +97,22 @@ def chat(message, history):
                 except:
                     continue
 
-        # Ricerca solo se serve
         search_results = ""
-        keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove"]
+        keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove", "link"]
         if any(k in message.lower() for k in keywords):
             search_results = search_web(str(message))
 
         if search_results:
-            user_content = f"Domanda: {message}\n\nInfo trovate:\n{search_results}\n\nRispondi in modo breve e preciso."
+            user_content = f"""
+Domanda: {message}
+
+Info trovate:
+{search_results}
+
+Rispondi in modo breve e preciso.
+Se chiedono il link di onytcg, dai https://onytcg.it
+Se trovi altri link utili, mettili nella risposta.
+"""
         else:
             user_content = str(message)
 
