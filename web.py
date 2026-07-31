@@ -13,38 +13,40 @@ client = OpenAI(
 )
 
 SYSTEM_PROMPT = """
-Sei OnyTCG, un ragazzo giovane e simpatico.
-Rispondi SEMPRE in italiano, in modo breve e naturale.
-Rispondi SOLO alla domanda fatta.
-
-Quando ti vengono date informazioni da internet o dal contenuto di pagine web, usale per rispondere.
-Non dire mai che non puoi cercare online o aprire link.
+Sei OnyTCG, un assistente preciso e chiaro.
+Rispondi SEMPRE in italiano.
+Rispondi SOLO alla domanda fatta, in modo breve e preciso.
+Quando ti vengono date informazioni da internet o dal contenuto di pagine web, usale.
+Non inventare informazioni.
+Non dire che non puoi cercare online.
 """
 
 def get_page_content(url: str) -> str:
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        r = requests.get(url, headers=headers, timeout=8)
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return ""
+        
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # Rimuove script e style
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         
         text = soup.get_text(separator=" ", strip=True)
-        return text[:2500]  # limita la lunghezza
-    except:
+        # Pulisce spazi multipli
+        text = " ".join(text.split())
+        return text[:3000]
+    except Exception as e:
+        print(f"Errore pagina {url}:", e)
         return ""
 
 def search_web(query: str) -> str:
     try:
-        results = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, region="it-it", max_results=4):
-                results.append(r)
-
+        results = list(DDGS().text(query, region="it-it", max_results=4))
+        
         if not results:
             return ""
 
@@ -54,15 +56,16 @@ def search_web(query: str) -> str:
             body = r.get("body", "")
             href = r.get("href", "")
             
-            text += f"Titolo: {title}\nSnippet: {body}\nLink: {href}\n"
+            text += f"### {title}\n"
+            text += f"Riassunto: {body}\n"
+            text += f"Link: {href}\n"
             
-            # Apre e legge il contenuto della pagina
-            if href:
+            if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
                     text += f"Contenuto della pagina:\n{content}\n"
             
-            text += "\n---\n"
+            text += "\n"
         
         return text
     except Exception as e:
@@ -91,12 +94,12 @@ def chat(message, history):
 
         if search_results:
             user_content = f"""
-Domanda dell'utente: {message}
+Domanda: {message}
 
-Risultati dalla ricerca e contenuto delle pagine:
+Informazioni trovate su internet (inclusi i contenuti delle pagine aperte):
 {search_results}
 
-Usa queste informazioni per rispondere alla domanda.
+Rispondi alla domanda in modo preciso usando solo queste informazioni.
 """
         else:
             user_content = message
@@ -106,8 +109,8 @@ Usa queste informazioni per rispondere alla domanda.
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.6,
-            max_tokens=450
+            temperature=0.5,
+            max_tokens=500
         )
 
         return response.choices[0].message.content
