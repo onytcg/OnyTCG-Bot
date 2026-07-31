@@ -32,9 +32,9 @@ Rispondi in modo breve e diretto.
 def get_page_content(url: str) -> str:
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        r = requests.get(url, headers=headers, timeout=12)
+        r = requests.get(url, headers=headers, timeout=6)
         if r.status_code != 200:
             return ""
         
@@ -45,45 +45,30 @@ def get_page_content(url: str) -> str:
         
         text = soup.get_text(separator=" ", strip=True)
         text = " ".join(text.split())
-        return text[:3500]
-    except Exception as e:
-        print(f"Errore pagina {url}:", e)
+        return text[:2000]
+    except:
         return ""
 
 def search_web(query: str) -> str:
     try:
-        results = []
+        results = list(DDGS().text(query, region="it-it", max_results=3))
         
-        if "onytcg" in query.lower():
-            results = list(DDGS().text("onytcg.it", region="it-it", max_results=5))
-            results += list(DDGS().text("site:onytcg.it", region="it-it", max_results=3))
-        else:
-            results = list(DDGS().text(query, region="it-it", max_results=5))
-
         if not results:
             return ""
 
         text = ""
-        seen_urls = set()
-        
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
             
-            if href in seen_urls:
-                continue
-            seen_urls.add(href)
-            
-            text += f"=== PAGINA {i} ===\n"
-            text += f"Titolo: {title}\n"
-            text += f"Riassunto: {body}\n"
-            text += f"URL: {href}\n"
+            text += f"=== {i}. {title} ===\n"
+            text += f"{body}\n"
             
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
-                    text += f"CONTENUTO LETTO:\n{content}\n"
+                    text += f"Contenuto: {content}\n"
             
             text += "\n"
         
@@ -112,33 +97,34 @@ async def get_ai_response(user_id: int, message: str) -> str:
     if user_id not in conversation_memory:
         conversation_memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    search_results = search_web(message)
+    # Ricerca solo se sembra necessaria
+    search_results = ""
+    keywords = ["tempo", "meteo", "notizie", "sito", "onytcg", "prezzo", "oggi", "quando", "dove", "chi", "cosa"]
+    if any(k in message.lower() for k in keywords) or len(message.split()) > 3:
+        search_results = search_web(message)
     
     if search_results:
         enhanced_message = f"""
-Ho cercato e aperto le pagine per te.
-
 Domanda: {message}
 
-Ecco cosa ho trovato e letto:
-
+Informazioni trovate:
 {search_results}
 
-Rispondi alla domanda usando queste informazioni. Hai già aperto e letto le pagine.
+Rispondi usando queste informazioni se utili.
 """
     else:
         enhanced_message = message
     
     conversation_memory[user_id].append({"role": "user", "content": enhanced_message})
     
-    if len(conversation_memory[user_id]) > 22:
-        conversation_memory[user_id] = [conversation_memory[user_id][0]] + conversation_memory[user_id][-20:]
+    if len(conversation_memory[user_id]) > 20:
+        conversation_memory[user_id] = [conversation_memory[user_id][0]] + conversation_memory[user_id][-18:]
     
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=conversation_memory[user_id],
-        temperature=0.3,
-        max_tokens=500
+        temperature=0.4,
+        max_tokens=400
     )
     
     ai_reply = response.choices[0].message.content
@@ -154,47 +140,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.chat.send_action(action="typing")
     
-    reply = await get_ai_response(user_id, text)
-    
-    await update.message.reply_text(reply)
-    
     try:
+        reply = await get_ai_response(user_id, text)
+        await update.message.reply_text(reply)
+        
         voice_file = await generate_voice(reply)
         with open(voice_file, "rb") as audio:
             await update.message.reply_voice(voice=audio)
         os.remove(voice_file)
     except Exception as e:
-        print("Errore voce:", e)
+        print("Errore:", e)
+        await update.message.reply_text("Scusa, riprova pure.")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     await update.message.chat.send_action(action="typing")
     
-    voice_file = await update.message.voice.get_file()
-    await voice_file.download_to_drive("user_voice.ogg")
-    
-    with open("user_voice.ogg", "rb") as f:
-        transcription = client.audio.transcriptions.create(
-            model="whisper-large-v3",
-            file=f,
-            language="it"
-        )
-    
-    user_text = transcription.text
-    os.remove("user_voice.ogg")
-    
-    reply = await get_ai_response(user_id, user_text)
-    
-    await update.message.reply_text(reply)
-    
     try:
+        voice_file = await update.message.voice.get_file()
+        await voice_file.download_to_drive("user_voice.ogg")
+        
+        with open("user_voice.ogg", "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=f,
+                language="it"
+            )
+        
+        user_text = transcription.text
+        os.remove("user_voice.ogg")
+        
+        reply = await get_ai_response(user_id, user_text)
+        await update.message.reply_text(reply)
+        
         voice_file = await generate_voice(reply)
         with open(voice_file, "rb") as audio:
             await update.message.reply_voice(voice=audio)
         os.remove(voice_file)
     except Exception as e:
-        print("Errore voce:", e)
+        print("Errore:", e)
+        await update.message.reply_text("Scusa, riprova pure.")
 
 async def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
