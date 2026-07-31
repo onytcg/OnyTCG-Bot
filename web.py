@@ -14,14 +14,12 @@ client = OpenAI(
 
 SYSTEM_PROMPT = """
 Sei OnyTCG.
-Rispondi SEMPRE in italiano, in modo breve e preciso.
+Rispondi SEMPRE in italiano, in modo chiaro e diretto.
 
-REGOLE OBBLIGATORIE:
-1. Ti vengono forniti i contenuti delle pagine web. Usali.
-2. NON dire MAI che non puoi aprire i link.
-3. NON dire MAI che puoi solo fornire informazioni sui contenuti trovati online.
-4. Se ti viene dato il contenuto di una pagina, usalo come se l'avessi letto tu.
-5. Rispondi solo alla domanda fatta.
+Hai la capacità di cercare su internet e di leggere il contenuto delle pagine web.
+Quando ti vengono forniti i contenuti delle pagine, significa che le hai già aperte e lette.
+Non dire mai che non puoi aprire i link.
+Usa le informazioni fornite per rispondere.
 """
 
 def get_page_content(url: str) -> str:
@@ -29,7 +27,7 @@ def get_page_content(url: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=12)
         if r.status_code != 200:
             return ""
         
@@ -40,25 +38,38 @@ def get_page_content(url: str) -> str:
         
         text = soup.get_text(separator=" ", strip=True)
         text = " ".join(text.split())
-        return text[:3000]
+        return text[:3500]
     except Exception as e:
         print(f"Errore pagina {url}:", e)
         return ""
 
 def search_web(query: str) -> str:
     try:
-        results = list(DDGS().text(query, region="it-it", max_results=4))
+        results = []
         
+        # Se parla del sito, cerca direttamente
+        if "onytcg" in query.lower():
+            results = list(DDGS().text("onytcg.it", region="it-it", max_results=5))
+            results += list(DDGS().text("site:onytcg.it", region="it-it", max_results=3))
+        else:
+            results = list(DDGS().text(query, region="it-it", max_results=5))
+
         if not results:
             return ""
 
         text = ""
+        seen_urls = set()
+        
         for i, r in enumerate(results, 1):
             title = r.get("title", "")
             body = r.get("body", "")
             href = r.get("href", "")
             
-            text += f"=== RISULTATO {i} ===\n"
+            if href in seen_urls:
+                continue
+            seen_urls.add(href)
+            
+            text += f"=== PAGINA {i} ===\n"
             text += f"Titolo: {title}\n"
             text += f"Riassunto: {body}\n"
             text += f"URL: {href}\n"
@@ -66,9 +77,7 @@ def search_web(query: str) -> str:
             if href and href.startswith("http"):
                 content = get_page_content(href)
                 if content:
-                    text += f"CONTENUTO LETTO DALLA PAGINA:\n{content}\n"
-                else:
-                    text += "Contenuto pagina non disponibile.\n"
+                    text += f"CONTENUTO LETTO:\n{content}\n"
             
             text += "\n"
         
@@ -99,13 +108,15 @@ def chat(message, history):
 
         if search_results:
             user_content = f"""
-Domanda dell'utente: {message}
+Ho cercato e aperto le pagine per te.
 
-Ecco i risultati della ricerca e i contenuti delle pagine che ho letto per te:
+Domanda: {message}
+
+Ecco cosa ho trovato e letto:
 
 {search_results}
 
-Rispondi alla domanda usando queste informazioni. Hai già letto i contenuti delle pagine.
+Rispondi alla domanda usando queste informazioni. Hai già aperto e letto le pagine.
 """
         else:
             user_content = message
@@ -115,7 +126,7 @@ Rispondi alla domanda usando queste informazioni. Hai già letto i contenuti del
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.4,
+            temperature=0.3,
             max_tokens=500
         )
 
